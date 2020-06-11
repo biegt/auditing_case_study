@@ -1,0 +1,63 @@
+---
+title: "Digimeter - Vorläufige Auswertung (Wissenstest)"
+author: "Till Bieg - AIT, Center for Technology Experience"
+date: "2020-03-03"
+output:
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
+    toc: true
+    toc_depth: 1
+    number_sections: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = 'center',
+  fig.width = 8,
+  fig.height = 4.5,
+  dev = c("svg"),
+  dpi = 500
+)
+
+library(tidyverse)
+library(readxl)
+library(here)
+library(summarytools)
+library(janitor)
+library(benford.analysis)
+library(conflicted)
+
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+
+theme_set(theme_bw() + theme(text = element_text(size = 14)))
+
+# Codeum das Dokument in den Outputs-Folder zu knitten
+# rmarkdown::render(here('03_scripts', 'digimeter_auswertung_v0.Rmd'),
+#                   output_file = here('04_outputs', 'digimeter_auswertung_v0.html'))
+```
+
+# Datenimport
+```{r}
+je_2014 <- read_excel(here("02_data", "ABC 2014 JEs.xlsx"))
+je_2013 <- read_excel(here("02_data", "ABC 2013 JEs.xlsx"))
+```
+
+Ist die Zeilennummer für jede JE-Nummer lückenlos?
+```{r}
+je_2014 <- je_2014 %>% clean_names()
+
+je_2014 %>% 
+  group_by(je_number) %>% 
+  summarize(n_lines = n(),
+            max_lines = max(je_line_number)) %>% 
+  filter(n_lines != max_lines)
+
+je_2014 %>% filter(je_number == "2014-0001-2400008088")
+```
+
+Es gibt zumindest neun JE-Nummern deren Zeilennummern unvollständig sind!
