@@ -1,7 +1,7 @@
 ---
-title: "Digimeter - Vorläufige Auswertung (Wissenstest)"
-author: "Till Bieg - AIT, Center for Technology Experience"
-date: "2020-03-03"
+title: "Case Study ILV 2020 - Ausarbeitung"
+author: "Till Bieg, David Krug"
+date: "Juni 2020"
 output:
   prettydoc::html_pretty:
     theme: hpstr
@@ -13,15 +13,14 @@ output:
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(
-  echo = FALSE,
+  echo = TRUE,
   message = FALSE,
   warning = FALSE,
   fig.align = 'center',
-  fig.width = 8,
-  fig.height = 4.5,
+  fig.width = 11.2,
+  fig.height = 6.3,
   dev = c("svg"),
-  dpi = 500
-)
+  dpi = 500)
 
 library(tidyverse)
 library(readxl)
@@ -35,29 +34,139 @@ conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
 
 theme_set(theme_bw() + theme(text = element_text(size = 14)))
-
-# Codeum das Dokument in den Outputs-Folder zu knitten
-# rmarkdown::render(here('03_scripts', 'digimeter_auswertung_v0.Rmd'),
-#                   output_file = here('04_outputs', 'digimeter_auswertung_v0.html'))
+# ggsave("04_output/plots/testplot", test_plot, device = "svg", width = 16 * 0.8, height = 9 * 0.8)
 ```
 
+# Verwendeter ETL-Prozesses
+Die Daten aus den bereitgestellten `MS Excel`-Dateien werden unter Verwendung des `readxl`-Packages unmittelbar in die globale Environment von `R` geladen. Hierbei ist darauf zu achten, dass die Daten innerhalb einer `MS Excel`-Datei gegebenenfalls auf mehrere Arbeitsblätter aufgegliedert sind. Obwohl die Datenmenge ingesamgt relativ umfassend ist, wird es ohne Weiteres möglich sein, diese Daten in den Arbeitsspeicher zu laden und entsprechende Analysen durchzuführen. Deswegen ist die Verwendung einer Datenbank im Rahmen des ETL-Prozesses nicht unbedingt notwendig.
+
+Für die Datenaufbereitung und -analyse wird wie bereits erwähnt die statstische Programmiersprache `R` verwendet. Dabei bedienen wir uns der umfangreichen Auswahl an Packages des `tidyverse` (z.B. `dyplr`, `tidyr`, `lubridate`). Für spezifische Analysen (zum Beispiel Benford- oder Zeitreihen-Analyse) werden darüber hinaus weitere Packages verwendet (zum Beispiel `benford.analysis` und `tsoutliers`). Um die Daten zu explorieren und Ergebnisse anschaulich darzustellen wird ein wesentlicher Schwerpunkt auch auf der Datenvisualisierung liegen. Diesbezüglich ist die Verwendung von Packages wie `ggplot2`, `shiny` und `plotly` angedacht.
+
+Für die Vorbereitung der Präsentation und die schriftliche Ausarbeitung werden wir in erster Linie `rmarkdown` verwenden, wobei ein Rückgriff auf andere Formate (z.B. `shiny`) nicht im Vorhinein ausgeschlossen ist.
+
+# Verwendeter Technology-Stacks
+Wir planen die Verwendung des folgenden Technology-Stacks, um die gegebenen Daten zu analysieren:
+
+* Microsoft Excel (MS Excel)
+* R mit RStudio und folgenden Packages (Auswahl):
+  * `readxl`: Zum Import von MS Excel-Dateien in R
+  * `dplyr`: Zur Datenmanipulation (z.B. Filtern, Selektieren, Aggregieren)
+  * `tidyr`: Zur Datenmanipulation (z.B. Pivotieren)
+  * `lubridate`: Zur Manipulation von zeitbezogenen Variablen (z.B. Datum)
+  * `ggplot2`: Zur Erstellung statischer Grafiken
+  * `plotly`: Zur Erstellung von interaktiven Grafiken
+  * `shiny`: Zur Erstellung von Dashboards und interaktiven Grafiken
+  * `rmarkdown`: Zur Erstellung und Export von Analyseberichten
+  * `benford.analysis`: Zur Durchführung von Benford-Analysen
+  * `tsoutliers`: Zur Analyse von Zeitreihen-Daten (z.B. Ausreißerdetektion)
+
+Je nach Anforderungen, die im Verlauf der Analyse erkennbar werden, behalten wir uns vor, zusätzliche Packages zu verwenden, um die Analyse nach besten Möglichkeiten durchzuführen.
+
+# Beschreibung der Datenbasis, Validitätschecks und Analysen
+```{r dataimport, cache = TRUE, Echo = FALSE}
 # Datenimport
-```{r}
-je_2014 <- read_excel(here("02_data", "ABC 2014 JEs.xlsx"))
-je_2013 <- read_excel(here("02_data", "ABC 2013 JEs.xlsx"))
+je_2014 <- read_excel(here("02_data", "ABC 2014 JEs.xlsx")) %>% 
+  clean_names()
+
+# je_2013 <- read_excel(here("02_data", "ABC 2013 JEs.xlsx")) %>%
+#   clean_names()
+
+tb_2014 <- read_excel(
+  here("02_data", "ABC TB and CoA.xlsx"),
+  sheet = 1,
+  col_types = c(rep("guess", 3),
+                "numeric",
+                "numeric",
+                rep("guess", 7))
+) %>%
+  clean_names()
 ```
 
-Ist die Zeilennummer für jede JE-Nummer lückenlos?
-```{r}
-je_2014 <- je_2014 %>% clean_names()
+## Beschreibung der Datenbasis
 
-je_2014 %>% 
-  group_by(je_number) %>% 
+...
+
+* Journal Entries 2014
+* Journal Entries 2013
+* Trial Balances 2014
+* Trial Balances 2013
+* CoA
+* User
+
+## Grundlegende Checks zur Validität / Integrität
+...
+
+**Ist die Soll- und Haben-Bilanz ingesamt in Summe gleich Null?**
+```{r}
+round(sum(je_2014$functional_amount), 2)
+```
+
+Ja, die Bilanz ist insgesamt ausgeglichen (in Summe Null).
+
+**Ist die Soll- und Haben-Bilanz pro Journal-Eintrag in Summe gleich Null?**
+```{r}
+je_2014 %>%
+  group_by(je_number) %>%
+  summarize(je_sum = round(sum(functional_amount), 2)) %>%
+  filter(je_sum != 0)
+```
+
+Ja, die Bilanz ist auch pro Journal-Eintrag ausgeglichen (in Summe Null).
+
+**Stimmt die Bilanzen (pro Konto) aus den Trial Balances mit denen aus den Journal-Einträgen überein?**
+```{r}
+je_balance <- je_2014 %>%
+  group_by(gl_account_code) %>%
+  summarize(func_diff_je = abs(round(sum(functional_amount), 2)))
+```
+
+```{r}
+tb_2014 %>%
+  mutate(func_diff_tb = abs(
+    round(functional_opening_balance - functional_closing_balance, 2)
+  )) %>%
+  left_join(je_balance, by = "gl_account_code") %>%
+  filter(func_diff_je != func_diff_tb)
+```
+
+Ja, die Bilanzen pro Konto stimmen zwischen den Trial Balances und den Journal-Einträgen überein!
+
+**Sind die Zeilennummern für jeden Journal-Eintrag lückenlos?**
+```{r line_numbers}
+incomplete_line_numbers <- je_2014 %>%
+  group_by(je_number) %>%
   summarize(n_lines = n(),
-            max_lines = max(je_line_number)) %>% 
-  filter(n_lines != max_lines)
+            max_lines = max(je_line_number)) %>%
+  filter(n_lines != max_lines) %>% pull(je_number)
 
-je_2014 %>% filter(je_number == "2014-0001-2400008088")
+length(incomplete_line_numbers)
 ```
 
-Es gibt zumindest neun JE-Nummern deren Zeilennummern unvollständig sind!
+Es gibt zumindest `r length(incomplete_line_numbers)` Journaleinträge mit unvollständigen Zeilennummern! Das kann ein erster Hinweis auf dolose Handlungen o.ä. sein.
+
+Genauer betrachtet:
+
+```{r}
+je_2014 %>% filter(je_number %in% incomplete_line_numbers) %>%
+  select(
+    je_number,
+    je_line_number,
+    effective_date,
+    entry_date,
+    source_code:functional_amount,
+    preparer_id,
+    preparer_department
+  ) %>% glimpse()
+```
+
+Bei einigen Einträgen fehlen bis zu vier Zeilennummern. Die Buchungen wurden von insgesamt zwei BenutzerInnen (`SYS` und `SheAl01`) durchgeführt und beziehen sich auf zwei Quellen (`Accurals` und `Goods receipts`). Insgesamt ein erstes interessantes Ergebnis, das mit dem Management des geprüften Unternehmens besprochen werden und im Laufe der weiteren Analyse unbedingt genauer untersucht werden sollte.
+
+## Weitereführende Analyse mit der Schwerpunkt Betrugsermittelung
+
+### Prüfungen der buchenden Personen
+### Prüfungen der Buchungs- und Erfassungszeit
+### Prüfung der verwendeten Konten
+### Prüfung der Höhe beziehungsweise Ziffern und Beträgen
+### Prüfungen auf Unterschiede zum Vorjahr (Trendanalysen)
+
+
