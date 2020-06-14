@@ -1,5 +1,5 @@
 ---
-title: "Case Study ILV 2020 - Ausarbeitung"
+title: "Case Study ILV 2020 - Analyse"
 author: "Till Bieg, David Krug"
 date: "Juni 2020"
 output:
@@ -29,11 +29,18 @@ library(summarytools)
 library(janitor)
 library(benford.analysis)
 library(conflicted)
+library(naniar)
+library(ggforce)
+library(lubridate)
 
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
+conflict_prefer("here", "here")
 
 theme_set(theme_bw() + theme(text = element_text(size = 14)))
+
+options(scipen = 1000000)
+
 # ggsave("04_output/plots/testplot", test_plot, device = "svg", width = 16 * 0.8, height = 9 * 0.8)
 ```
 
@@ -65,10 +72,12 @@ Je nach Anforderungen, die im Verlauf der Analyse erkennbar werden, behalten wir
 # Beschreibung der Datenbasis, Validitätschecks und Analysen
 ```{r dataimport, cache = TRUE, Echo = FALSE}
 # Datenimport
-je_2014 <- read_excel(here("02_data", "ABC 2014 JEs.xlsx")) %>% 
+je_2014 <- read_excel(here("02_data", "ABC 2014 JEs.xlsx"),
+                      na = "EY EMPTY") %>% 
   clean_names()
 
-# je_2013 <- read_excel(here("02_data", "ABC 2013 JEs.xlsx")) %>%
+# je_2013 <- read_excel(here("02_data", "ABC 2013 JEs.xlsx"),
+#                       na = "EY EMPTY") %>%
 #   clean_names()
 
 tb_2014 <- read_excel(
@@ -80,30 +89,93 @@ tb_2014 <- read_excel(
                 rep("guess", 7))
 ) %>%
   clean_names()
+
+coa <- read_excel(
+  here("02_data", "ABC TB and CoA.xlsx"),
+  sheet = 4,
+  na = "EY_EMPTY"
+) %>%
+  clean_names()
+
+users <- read_excel(
+  here("02_data", "ABC user listing.xlsx"),
+  sheet = 1,
+  na = "EY_EMPTY"
+) %>%
+  clean_names()
 ```
 
-## Beschreibung der Datenbasis
+## Beschreibung der Datenbasis und Checks zur Integrität
 
-...
+Wie bereits im Konzept beschrieben, liegt der Schwerpunkt der Analyse auf der Prüfung der Daten auf dolose Handlungen / betrügerische Aktivitäten. Folgende Datensätze wurden von der ABC Gesellschaft für die Prüfung zur Verfügung gestellt:
 
-* Journal Entries 2014
-* Journal Entries 2013
-* Trial Balances 2014
-* Trial Balances 2013
-* CoA
-* User
+* Buchungsjournal für das Jahr 2014 (zu prüfende Periode): Enthält Buchungseinträge aus dem Jahr 2014.
+* Buchungsjournal für das Jahr 2013: Enthält Buchungseinträge aus dem Jahr 2013.
+* Saldenliste (Trial Balances) für das Jahr 2014: Beinhaltet die Anfangs- und Endsalden jedes Kontos für das Jahr 2014.
+* Saldenliste (Trial Balances) für das Jahr 2014 nur mit Daten von Jänner bis September: Geeignet für Forecasts.
+* Saldenliste (Trial Balances) für das Jahr 2013: Beinhaltet die Anfangs- und Endsalden jedes Kontos für das Jahr 2013.
+* Kontenplan (Chart of Accounts): Zur Gliederung jedes Konto zu einem Bilanz- oder GuV-Posten
+* Quellenliste (Source Listing): Der Inhalt der Quellenliste ist nicht ganz schlüssig, da es scheint, als ob viele Einträge bloße Platzhalter enthalten. Ist mit der ABC Gesellschaft abzuklären.
+* Benutzerliste (User Listing): Enthält eine Zuordnung verschiedener Systembenutzer zu Benutzernamen und Departments.
 
-## Grundlegende Checks zur Validität / Integrität
-...
+Der zentrale Datensatz für die Analyse ist das Buchungsjournal aus dem Jahr 2014. Entsprechend bezieht sich ein Großteil der folgenden Validitätschecks auf diesen Datensatz . Der Datensatz enthält `r length(unique(je_2014$je_number))` Journaleinträge mit Buchungen von `r length(unique(je_2014$gl_account_number))` Konten.
 
-**Ist die Soll- und Haben-Bilanz ingesamt in Summe gleich Null?**
+Überblick über die Daten (Buchungsjournal für das Jahr 2014):
+
+```{r}
+glimpse(je_2014)
+```
+
+Einige Spalten enthalten nur einen einzigen konstanten Wert und sind daher für die weitere Analyse nicht relevant / nicht zu gebrauchen:
+
+```{r}
+je_2014 %>% 
+  select_if(function(x) length(unique(x)) == 1) %>% 
+  head()
+```
+
+```{r, comment = NA, prompt = FALSE, cache = FALSE, echo = FALSE, results = 'asis'}
+
+# dfSummary(je_2014,
+#           plain.ascii = FALSE,
+#           style = "grid",
+#           graph.magnif = 0.75,
+#           valid.col = FALSE,
+#           headings = FALSE,
+#           tmp.img.dir = "/tmp")
+```
+
+Bezüglich fehlender Werte sollten insbesondere der `functional_amount` und die `preparer_id` keine fehlende Werte enthalten. Auf den ersten Blick ist erkennbar, dass nur die zwei Spalten `approver_id` und `je_line_description` fehlende Werte enthalten, nicht jedoch `fucntional_amount` und `preparer_id`:
+
+```{r}
+miss_var_summary(je_2014)
+```
+
+Zu bemerken ist, dass die `je_line_description` jedoch ingesamt keine bedeutsamen Beschreibungen enthält, sondern nur Platzhalter. Das schränkt die Prüfbarkeit der Daten ein, da der Buchungstext (`je_line_desciption`) wichtige Rückschlüsse auf die Art der Buchung und Buchungsmuster geben kann.
+
+```{r}
+unique(je_2014$je_line_description)
+mean(str_detect(na.omit(je_2014$je_line_description), "JE Line Description"))
+```
+
+Des Weiteren fehlen in dem Datensatz Angaben zur Uhrzeit der Buchung, was die Prüfbarkeit der Daten weiter einschränkt. Mithilfe der Uhrzeit ließen sich Buchungen außerhalb der üblichen Geschäftszeiten identifizieren, die wiederum ein Hinweis auf dolose Handlungen sein können. Bei der Benutzerliste fehlt auch die Rolle und Titel der jeweilige Benutzer, die zur genauen Prüfung der Daten ggf. vorteilhaft wären.
+
+To do: Weitere Daten ergänzen, die zur Prüfung wünschenswert wären (Abgleich mit Folien).
+
+Im Folgenden werden grundlegende Validitäts- bzw. Intigritätscheck durchgeführt:
+
+**Ist die Summe aller funktionalen Beträge im Buchungsjournal gleich Null?**
+
 ```{r}
 round(sum(je_2014$functional_amount), 2)
 ```
 
-Ja, die Bilanz ist insgesamt ausgeglichen (in Summe Null).
+Ja, die Summe der funktionalen Beträge insgesamt ist gleich Null.
 
-**Ist die Soll- und Haben-Bilanz pro Journal-Eintrag in Summe gleich Null?**
+**Ist die Summe der funktionalen Beträge innerhalb jedes Journaleintrags gleich Null?**
+
+Der folgende Code prüft, ob innerhalb jedes Journaleintrags die Summe der funktionalen Beträge gleich Null ist.
+
 ```{r}
 je_2014 %>%
   group_by(je_number) %>%
@@ -111,9 +183,12 @@ je_2014 %>%
   filter(je_sum != 0)
 ```
 
-Ja, die Bilanz ist auch pro Journal-Eintrag ausgeglichen (in Summe Null).
+Ja, die die Summe der funktionalen Beträge innerhalb jedes Journal-Eintrags ist gleich Null.
 
-**Stimmt die Bilanzen (pro Konto) aus den Trial Balances mit denen aus den Journal-Einträgen überein?**
+**Stimmen die Anfangs- und Endsalden zwischen Buchungsjournal und Saldenliste überein?**
+
+Der folgende Code findet Konten bei denen die Differenz von Anfangs- und Endsaldo zwischen dem Buchungsjournal und der Saldenliste nicht übereinstimmt.
+
 ```{r}
 je_balance <- je_2014 %>%
   group_by(gl_account_code) %>%
@@ -129,9 +204,12 @@ tb_2014 %>%
   filter(func_diff_je != func_diff_tb)
 ```
 
-Ja, die Bilanzen pro Konto stimmen zwischen den Trial Balances und den Journal-Einträgen überein!
+Der zurückgegebene Dataframe enthält 0 Zeilen. Also lässt isch annehmen, dass die Differenz von Anfangs- und Endsaldo zwischen dem Buchungsjournal und der Saldenliste für jedes Konto übereinstimmt.
 
 **Sind die Zeilennummern für jeden Journal-Eintrag lückenlos?**
+
+Der folgende Code findet Journaleinträge, bei denen die Zeilennummern nicht lückenlos sind.
+
 ```{r line_numbers}
 incomplete_line_numbers <- je_2014 %>%
   group_by(je_number) %>%
@@ -142,9 +220,7 @@ incomplete_line_numbers <- je_2014 %>%
 length(incomplete_line_numbers)
 ```
 
-Es gibt zumindest `r length(incomplete_line_numbers)` Journaleinträge mit unvollständigen Zeilennummern! Das kann ein erster Hinweis auf dolose Handlungen o.ä. sein.
-
-Genauer betrachtet:
+Es gibt zumindest `r length(incomplete_line_numbers)` Journaleinträge mit unvollständigen Zeilennummern! Das kann ein erster Hinweis auf dolose Handlungen o.ä. sein. Genauer betrachtet:
 
 ```{r}
 je_2014 %>% filter(je_number %in% incomplete_line_numbers) %>%
@@ -159,14 +235,393 @@ je_2014 %>% filter(je_number %in% incomplete_line_numbers) %>%
   ) %>% glimpse()
 ```
 
+Benutzer, die mit diesen Buchungen assoziiert sind:
+
+```{r}
+(incomplete_line_numbers_users <- je_2014 %>%
+  filter(je_number %in% incomplete_line_numbers) %>% 
+  pull(preparer_id) %>% 
+  unique)
+```
+
+Quellen / Quellengruppen, die mit diesen Buchungen assoziiert sind:
+```{r}
+(incomplete_line_numbers_users <- je_2014 %>%
+  filter(je_number %in% incomplete_line_numbers) %>% 
+  pull(source) %>% 
+  unique)
+```
+
+```{r}
+(incomplete_line_numbers_users <- je_2014 %>%
+  filter(je_number %in% incomplete_line_numbers) %>% 
+  pull(source_group) %>% 
+  unique)
+```
+
 Bei einigen Einträgen fehlen bis zu vier Zeilennummern. Die Buchungen wurden von insgesamt zwei BenutzerInnen (`SYS` und `SheAl01`) durchgeführt und beziehen sich auf zwei Quellen (`Accurals` und `Goods receipts`). Insgesamt ein erstes interessantes Ergebnis, das mit dem Management des geprüften Unternehmens besprochen werden und im Laufe der weiteren Analyse unbedingt genauer untersucht werden sollte.
 
+### Zusammenfassung
+Der überwiegende Teil der durchgeführten Validitätschecks fällt positiv aus. Allerdings gibt es  Journaleinträge mit unvollständigen Zeilennummern, was ein erster Hinweis auf dolose Handlungen ist!
+
+Außerdem ist anzumerken, dass die Datengrundlage Unvollständigkeiten aufweist, die die Prüfbarkeit einschränken (fehlenden Buchungsbeschreibungen, fehlende Buchungsuhrzeit).
+
 ## Weitereführende Analyse mit der Schwerpunkt Betrugsermittelung
+Im folgenden werden weiterführende Analysen mit Schwerpunkt Betrugsermittelung durchgeführt. Ziel ist es Indizien zu für dolose Handlungen / betrügerische Aktivitäten zu finden. 
 
 ### Prüfungen der buchenden Personen
+Insgesamt haben `r length(unique(je_2014$preparer_id))` Benutzer durchgeführt.
+
+Verteilung der Buchungshäufigkeit:
+
+```{r}
+line_count <- je_2014 %>% 
+  count(preparer_id)
+```
+
+```{r}
+summary(line_count %>% select(n) %>% rename(`Buchungshäufigkeit `= n))
+```
+
+```{r}
+line_count %>% 
+  ggplot(aes(x = n)) +
+  geom_histogram(bins = 15) +
+  labs(x = "Buchungshäufigkeit", y = "Anzahl")
+```
+
+```{r}
+line_count %>% 
+  ggplot(aes(y = n, x = 1)) +
+  geom_boxplot(color = "#36cfb3", width = 0.7, outlier.alpha = 0) +
+  labs(y = "Buchungshäufigkeit") +
+  theme(axis.title.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.x = element_blank()) +
+  expand_limits(x = c(0.5, 1.5)) +
+  geom_sina(color = "#36cfb3", maxwidth = 0.2, size = 2, alpha = 0.2) +
+  scale_y_log10(breaks = c(10, 100, 1000, 10000, 100000))
+```
+
+Es zeigt sich, dass die Benutzer im Mittel mit 1000 Buchungszeilen assoziiert sind. Allerdings gibt es auch einen recht großen Anteil an Benutzern (ca. 25% mit 10000 Buchungen oder mehr). Ein Benutzer hat sogar ca. 100000 Buchungen durchgeführt.
+
+Um die Buchungen der einzelner Nutzer besser einordnen zu können, wird außerdem die Buchungshäufigkeit pro Department betrachtet. Dabei ist anzunehmen, dass Personen aus einem Department mit vielen Buchungen tendenziell weniger Fehler machen, als Personen aus Departments mit wenigen Buchungen. Die Schlussfolgerung ist natürlich auch auf die individuelle Ebene (pro Benutzer) zu übertragen.
+
+```{r}
+je_2014 %>% 
+  count(preparer_department) %>% 
+  mutate(preparer_department = fct_reorder(preparer_department, n)) %>% 
+  ggplot(aes(x = preparer_department, y = n)) +
+  geom_col( fill = "#36cfb3") +
+  geom_text(aes(label = n), hjust = 1.1) +
+  coord_flip() +
+  scale_y_log10() +
+  labs(x = "Department", y = "Anzahl Buchungen")
+```
+
+Die initiale Analyse der Buchungszeilen ergab, dass es Journaleinträge mit lückenhaften Buchungszeilen gibt und diese Buchungen mit zwei Benutzern assoziiert sind: `SYS` und `SheAl01`. Im folgenden sollen diese beiden Benutzer und deren Buchungen noch genauer betrachtet werden.
+
+```{r}
+users %>% 
+  filter(user_name %in% incomplete_line_numbers_users) %>% 
+  left_join(line_count, by = c("user_name" = "preparer_id"))
+```
+
+Es ist zu erkennen, dass beide Benutzer relativ viele Buchungen durchgeführt haben. Somit könnte geschlussfolgert werden, dass es sich um vergleichsweise erfahrene Benutzer handelt, die wenige "unabsichtliche" Fehler machen.
+
 ### Prüfungen der Buchungs- und Erfassungszeit
+
+Für einen besseren Überblick wird zunächst die Anzahl der Buchungen pro Monat betrachtet.
+
+```{r}
+month_vec <- c("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli",
+               "August", "September", "Oktober", "November", "Dezember")
+
+je_2014 %>% 
+  count(fiscal_period) %>% 
+  ggplot(aes(x = fct_rev(fiscal_period), y = n)) +
+  geom_col(fill = "#36cfb3") +
+  geom_text(aes(label = n), hjust = 1.1) +
+  labs(x = "Monat", 
+       y = "Anzahl Buchungen") +
+  coord_flip() +
+  scale_x_discrete(labels = rev(month_vec))
+```
+
+Als nächstes wird geprüft, ob Belegdaten nicht nach dem jeweiligen Erfassungsdatum und jeweils immer im Geschäftsjahr 2014 eingetragen werden. 
+
+```{r}
+mean(year(je_2014$effective_date) != 2014)
+```
+
+Alle Belegdaten liegen im Jahr 2014.
+
+```{r}
+mean(year(je_2014$entry_date) != 2014)
+```
+
+Einige Erfassungsdaten liegen nicht Jahr 2014. Das ist aber an sich kein Widerspruch und aus Sicht der Integrität in Ordnung. 
+
+```{r}
+eff_date_after_ent_data <- je_2014 %>% 
+  filter(!effective_date <= entry_date) %>% pull(je_line_number)
+```
+
+Allerdings gibt es insgesamt `r eff_date_after_ent_data %>% length()`. Dies ist aus Sicht der Datenintegrität problematisch und sollte mit dem Management der ABC-Gesellschaft besprochen werden. 
+
+Als nächstes wird geprüft, ob Buchungen am Wochenende stattgefunden haben.
+
+```{r}
+weekday_vec <- c("Montag",
+                 "Dienstag",
+                 "Mittwoch",
+                 "Donnerstag",
+                 "Freitag",
+                 "Samstag",
+                 "Sonntag")
+
+je_2014 <- je_2014 %>% 
+  mutate(weekday_efficient_date = weekdays(effective_date),
+         weekday_entry_date = weekdays(entry_date))
+```
+
+```{r}
+je_2014 %>% count(weekday_efficient_date) %>%
+  mutate(
+    weekday_efficient_date = fct_relevel(
+      weekday_efficient_date,
+      weekday_vec
+    )
+  ) %>%
+  ggplot(aes(x = fct_rev(weekday_efficient_date), y = n)) +
+  geom_col(fill = "#36cfb3") +
+  geom_text(aes(label = n), hjust = 1.1) +
+  labs(x = "Wochentag (Belegdatum)",
+       y = "Anzahl Buchungen") +
+  coord_flip()
+```
+
+```{r}
+je_2014 %>% count(weekday_entry_date) %>%
+  mutate(
+    weekday_entry_date = fct_relevel(
+      weekday_entry_date,
+      weekday_vec
+    )
+  ) %>%
+  ggplot(aes(x = fct_rev(weekday_entry_date), y = n)) +
+  geom_col(fill = "#36cfb3") +
+  geom_text(aes(label = n), hjust = 1.1) +
+  labs(x = "Wochentag (Belegdatum)",
+       y = "Anzahl Buchungen") +
+  coord_flip()
+```
+
+Auf Basis der Analyse zeigt sich, dass mehrere tausend Einträge deren existiern, die an einem Wochenende "belegt" oder erfasst wurden. Das ist an sich noch kein Widerspruch - denn je nach Unternehmen sind Buchungen am Wochenende durchaus üblich. Dieses Ergebnis sollte auch mit dem Management der ABC-Gesellschaft abgeklärt werden.
+
+Noch genauer zu untersuchen: Häufung von Buchungen am Jahresende.
+
 ### Prüfung der verwendeten Konten
+
+Konten die mit Journaleinträgen mit unvollstänidgen Zeilennummern assoziiert sind:
+
+```{r}
+incomplete_line_numbers_accounts <- je_2014 %>% filter(je_number %in% incomplete_line_numbers) %>% pull(gl_account_code) %>% unique()
+
+account_counts <- je_2014 %>% 
+  count(gl_account_code) %>% 
+  left_join(coa)
+
+account_counts %>% 
+  filter(gl_account_code %in% incomplete_line_numbers_accounts) %>% 
+  glimpse()
+```
+
+Muss man sich noch näher ansehen...
+
 ### Prüfung der Höhe beziehungsweise Ziffern und Beträgen
+
+Zunächst ein Überblick über die Verteilung der Beträge im Buchungsjournal insgesamt:
+
+```{r}
+je_2014 %>%
+  mutate(positive_amount = (functional_amount > 0) %>% as.factor()) %>%
+  ggplot(aes(x = fct_rev(positive_amount), y = abs(functional_amount))) +
+  geom_violin(aes(fill = positive_amount)) +
+  scale_y_log10(name = "Funktionaler Betrag (absolut)",
+                breaks = c(1, 10, 100, 1000, 10000, 100000, 1000000, 10000000)) +
+  scale_fill_discrete(name = "",
+                      labels = c("Negative Beträge", "Positve Beträge")) +
+  theme(axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        legend.position = "bottom") +
+  guides(fill = guide_legend(reverse = TRUE))
+```
+
+Als nächstes wird eine Benford-Analyse in Bezug auf den Gesamtdatensatz (Buchungsjournal von 2014 durchgeführt). Begonnen wird mit einem First-Two-Digit-Test, also die Prüfung der ersten beiden Ziffern der funktionalen Beträge. Nach Empfehlung der AFCE werden die positiven und negativen Beträge dabei separat betrachtet, da die Motivation zur Manipulation jeweils unterschiedlich sein kann. Außerdem werden nach Empfehlung von Nigrini und Miller (2009) nur Beträge ab 10 Euro oder höher betrachtet.
+
+```{r}
+# Funktion, um die letzten Stellen einer Zahl zu extrahieren
+# last.two.digits <- function(data, sign = "positive") {
+#   
+#   if (!is.numeric(data)) stop("Data must be a numeric vector")
+#   
+#   if (sign == "positive")  positives <- data[data > 0 & !is.na(data)]
+#   if (sign == "negative")  positives <- data[data < 0 & !is.na(data)]*(-1)
+#   if (sign == "both")      positives <- abs(data[data != 0 & !is.na(data)]) 
+#   
+#   digits.as.str <- as.character(positives)
+#   digits.as.str <- gsub("\\.", "", digits.as.str)
+#   ltd <- as.integer(substr(digits.as.str, nchar(digits.as.str) - 1, nchar(digits.as.str)))
+#   ltd[ltd < 10] <- ltd[ltd < 10]*10
+#   
+#   results <- data.frame(data = positives,
+#                         data.digits = ltd)
+#   return(results)
+# }
+
+```
+
+Vorbereitung der Datensätze:
+
+```{r}
+je_2014 <- je_2014 %>%
+  mutate(
+    last_two_digits = floor(abs(functional_amount)) %>%
+      str_sub(start = -2) %>% as.numeric())
+
+# je_2014_gt_10 <- je_2014[je_2014["functional_amount"] >= 10.0,]
+```
+
+Benford-Analyse:
+
+"Naive" Benford-Analyse (Two-Digit-Test) für das gesamte Dataset:
+
+```{r]}
+bf_total <- benford(je_2014$functional_amount)
+bf_total
+plot(bf_total)
+
+# getDuplicates(benford_test, je_2014_positive) %>%  View()
+# 
+# benford_3 <- benford(je_2014_test_positive$functional_amount, number.of.digits = 3)
+# 
+# benford(je_2014_test_gt_10$functional_amount, number.of.digits = 3)
+# 
+# extract.digits(je_2014_test_positive$functional_amount, number.of.digits = 3, digit)
+```
+
+Last-Two-Digits-Test
+
+```{r}
+last_two_digits_test <-
+  benford(
+    je_2014 %>%
+      filter(last_two_digits >= 10,
+             functional_amount < 0) %>% pull(last_two_digits),
+    number.of.digits = 2
+  )
+
+last_two_digits_test
+plot(last_two_digits_test)
+```
+
+Benford-Analyse für Buchungen am Wochenende (inklusive genauerer Betrachtung):
+
+```{r}
+# je_2014_weekend_entry <- je_2014 %>% filter(weekday_entry_date %in% c("Samstag", "Sonntag")) 
+# 
+# je_2014_weekend_entry %>% count(source_group, sort = TRUE)
+# je_2014_weekend_entry %>% count(preparer_id, sort = TRUE)
+# 
+# plot(benford(je_2014_weekend_entry$functional_amount))
+```
+
+```{r}
+# je_2014_weekend_eff <- je_2014 %>% filter(weekday_efficient_date %in% c("Samstag", "Sonntag"))
+# 
+# je_2014_weekend_eff %>% count(source_group, sort = TRUE)
+# je_2014_weekend_eff %>% count(preparer_id, sort = TRUE)
+# 
+# weekend_eff_bf_neg <- benford(je_2014_weekend_entry %>%  filter(functional_amount < 0) %>% pull(functional_amount), sign = "negative")
+# weekend_eff_bf_neg
+# plot(weekend_eff_bf_neg)
+```
+
+To do: Check wegen empfohlenen Spezifika für Benford-Analyse. Vielleicht noch die einzelner Nutzer genauer betrachten!
+ 
+```{r}
+# Code für vereinfachten Benford-Plot 
+# plot(..., except=c("second order", "summation", "mantissa", "chi squared","abs diff", "ex summation", "Legend"), multiple = F)
+```
+
+Benfort-Analyse für verschiedene Benutzer:
+
+```{r}
+bf_by_user <- function(user, sign = "positive") {
+  if (sign == "positive") {
+    je_2014_bf <- je_2014 %>%
+      filter(preparer_id == user) %>%
+      filter(functional_amount > 0)
+    
+    bf <- je_2014_bf %>% pull(functional_amount) %>%
+      benford(sign = "positive")
+  } else {
+    je_2014_bf <- je_2014 %>%
+      filter(preparer_id == user) %>%
+      filter(functional_amount < 0)
+    
+    bf <- je_2014_bf %>% pull(functional_amount) %>%
+      benford(sign = "negative")
+  }
+  
+  bf
+  
+}
+
+users <- je_2014 %>% count(preparer_id, sort = TRUE) %>% pull(preparer_id)
+
+map(users, ~ bf_by_user(.)$MAD.conformity)
+
+# To do: Threshold einbauen für Beträge nur über 10.00
+```
+
+Fazit: Die Buchungen der zwei verdächtigen Benutzer folgen auf Basis einer First-Two-Digits-Benford-Analyse nicht dem Benfordschen Gesetz, dass tun aber Buchungen von anderen Benutzer (mit einer ähnlichen Anzahl von Buchungen) auch nicht. Daher diesbezüglich kein dringender Verdacht auf Manipulationen seitens dieser Benutzer. Die Benutzer sollten dennoch genauer betrachtet werden!
+
+```{r}
+bf_SYS <- bf_by_user("SYS", sign = "negative")
+bf_SYS
+plot(bf_SYS)
+# getSuspects(bf_SYS, je_2014_SYS) %>% View()
+# getDuplicates(bf_SYS, je_2014_SYS) %>% View()
+```
+
+```{r}
+bf_SheAl01 <- bf_by_user("SheAl01", sign = "negative")
+bf_SheAl01
+plot(bf_SheAl01)
+# getSuspects(bf_SheAl01, je_2014) %>% View()
+# getDuplicates(bf_SheAl01 , je_2014) %>% View()
+```
+
 ### Prüfungen auf Unterschiede zum Vorjahr (Trendanalysen)
 
+To be done!
+
+## Nächste Schritte: 
+* bf_by_user so implementieren, dass auch ursprünglichen Datenabrufbar sind
+* Nochmal prüfen, welche Spezifika für Benford-Analyse empfehlenswert sind (negativ und positive getrennt, nur mindestens zweistellige Zahlen, ...) -> Paper von Nigrini und Miller
+* Benford-Analysen nach Konto und Quellengruppe
+* Zeitreihen-Analyse
+* Word und Powerpoint anfangen und dort mal alles was schon fix ist reinhauen! 
+* Datensätze bezüglich möglichen Untergliederungen explorieren
+* Schnittmengen zwischen den verschiedenen Indizien anschauen
+
+## Zusammenfassung bisher:
+Hinweise auf dolose Handlungen / Verletzungen der Integrität:
+ 
+ * Einträge mit vollständigen Zeilennummern
+ * Einträge mit Eintragsdatum vor Belegdatum
+ * Einträge mit Beleg- und/oder Erfassungsdatum am Wochenende
 
