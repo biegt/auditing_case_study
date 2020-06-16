@@ -17,8 +17,8 @@ knitr::opts_chunk$set(
   message = FALSE,
   warning = FALSE,
   fig.align = 'center',
-  fig.width = 11.2,
-  fig.height = 6.3,
+  fig.width = 6.4,
+  fig.height = 3.6,
   dev = c("svg"),
   dpi = 500)
 
@@ -259,6 +259,15 @@ Quellen / Quellengruppen, die mit diesen Buchungen assoziiert sind:
   unique)
 ```
 
+Assoziierte Konten:
+```{r}
+(incomplete_line_numbers_users <- je_2014 %>%
+  filter(je_number %in% incomplete_line_numbers) %>% 
+  pull(gl_account_code) %>% 
+  unique)
+```
+
+
 Bei einigen Einträgen fehlen bis zu vier Zeilennummern. Die Buchungen wurden von insgesamt zwei BenutzerInnen (`SYS` und `SheAl01`) durchgeführt und beziehen sich auf zwei Quellen (`Accurals` und `Goods receipts`). Insgesamt ein erstes interessantes Ergebnis, das mit dem Management des geprüften Unternehmens besprochen werden und im Laufe der weiteren Analyse unbedingt genauer untersucht werden sollte.
 
 ### Zusammenfassung
@@ -387,12 +396,8 @@ je_2014 <- je_2014 %>%
 
 ```{r}
 je_2014 %>% count(weekday_efficient_date) %>%
-  mutate(
-    weekday_efficient_date = fct_relevel(
-      weekday_efficient_date,
-      weekday_vec
-    )
-  ) %>%
+  mutate(weekday_efficient_date = fct_relevel(weekday_efficient_date,
+                                              weekday_vec)) %>%
   ggplot(aes(x = fct_rev(weekday_efficient_date), y = n)) +
   geom_col(fill = "#36cfb3") +
   geom_text(aes(label = n), hjust = 1.1) +
@@ -403,21 +408,18 @@ je_2014 %>% count(weekday_efficient_date) %>%
 
 ```{r}
 je_2014 %>% count(weekday_entry_date) %>%
-  mutate(
-    weekday_entry_date = fct_relevel(
-      weekday_entry_date,
-      weekday_vec
-    )
-  ) %>%
+  mutate(weekday_entry_date = fct_relevel(weekday_entry_date,
+                                          weekday_vec)) %>%
   ggplot(aes(x = fct_rev(weekday_entry_date), y = n)) +
   geom_col(fill = "#36cfb3") +
-  geom_text(aes(label = n), hjust = 1.1) +
-  labs(x = "Wochentag (Belegdatum)",
+  geom_text(aes(label = n), hjust = -0.1) +
+  labs(x = "Wochentag (Erfassungsdatum)",
        y = "Anzahl Buchungen") +
-  coord_flip()
+  coord_flip() +
+  expand_limits(y = c(0, 80000))
 ```
 
-Auf Basis der Analyse zeigt sich, dass mehrere tausend Einträge deren existiern, die an einem Wochenende "belegt" oder erfasst wurden. Das ist an sich noch kein Widerspruch - denn je nach Unternehmen sind Buchungen am Wochenende durchaus üblich. Dieses Ergebnis sollte auch mit dem Management der ABC-Gesellschaft abgeklärt werden.
+Auf Basis der Analyse zeigt sich, dass mehrere tausend Einträge existieren, die an einem Wochenende "belegt" oder erfasst wurden. Das ist an sich noch kein Widerspruch - denn je nach Unternehmen sind Buchungen am Wochenende durchaus üblich. Dieses Ergebnis sollte auch mit dem Management der ABC-Gesellschaft abgeklärt werden.
 
 Noch genauer zu untersuchen: Häufung von Buchungen am Jahresende.
 
@@ -448,18 +450,20 @@ je_2014 %>%
   mutate(positive_amount = (functional_amount > 0) %>% as.factor()) %>%
   ggplot(aes(x = fct_rev(positive_amount), y = abs(functional_amount))) +
   geom_violin(aes(fill = positive_amount)) +
-  scale_y_log10(name = "Funktionaler Betrag (absolut)",
+  scale_y_log10(name = "Funktionaler Betrag (in Euro, absolut)",
                 breaks = c(1, 10, 100, 1000, 10000, 100000, 1000000, 10000000)) +
-  scale_fill_discrete(name = "",
-                      labels = c("Negative Beträge", "Positve Beträge")) +
+  scale_fill_manual(name = "",
+                      labels = c("Negative Beträge", "Positve Beträge"),
+                      values = c("#f8b9c2", "#36cfb3")) +
   theme(axis.title.x = element_blank(),
         axis.ticks.x = element_blank(),
         axis.text.x = element_blank(),
         legend.position = "bottom") +
-  guides(fill = guide_legend(reverse = TRUE))
+  guides(fill = guide_legend(reverse = TRUE)) +
+  theme(text = element_text(size = 12))
 ```
 
-Als nächstes wird eine Benford-Analyse in Bezug auf den Gesamtdatensatz (Buchungsjournal von 2014 durchgeführt). Begonnen wird mit einem First-Two-Digit-Test, also die Prüfung der ersten beiden Ziffern der funktionalen Beträge. Nach Empfehlung der AFCE werden die positiven und negativen Beträge dabei separat betrachtet, da die Motivation zur Manipulation jeweils unterschiedlich sein kann. Außerdem werden nach Empfehlung von Nigrini und Miller (2009) nur Beträge ab 10 Euro oder höher betrachtet.
+Als nächstes wird eine Benford-Analyse in Bezug auf den Gesamtdatensatz (Buchungsjournal von 2014 durchgeführt). Begonnen wird mit einem First-Two-Digit-Test, also die Prüfung der ersten beiden Ziffern der funktionalen Beträge. Nach Empfehlung der AFCE werden die positiven und negativen Beträge dabei separat betrachtet, da die Motivation zur Manipulation jeweils unterschiedlich sein kann. Es werden auch Beträge unter 10,00 Euro betrachtet, obwohl diese auch vernachlässigt werden könnten (vgl. Nigrini und Miller, 2009).
 
 ```{r}
 # Funktion, um die letzten Stellen einer Zahl zu extrahieren
@@ -486,45 +490,52 @@ Als nächstes wird eine Benford-Analyse in Bezug auf den Gesamtdatensatz (Buchun
 Vorbereitung der Datensätze:
 
 ```{r}
+# Extrahiert die letzten zwei Stellen des funktionalen Betrags (vor dem Komma)
 je_2014 <- je_2014 %>%
   mutate(
     last_two_digits = floor(abs(functional_amount)) %>%
       str_sub(start = -2) %>% as.numeric())
-
-# je_2014_gt_10 <- je_2014[je_2014["functional_amount"] >= 10.0,]
 ```
 
 Benford-Analyse:
 
-"Naive" Benford-Analyse (Two-Digit-Test) für das gesamte Dataset:
-
+"Naive" Benford-Analyse für das gesamte Dataset (First-Two-Digits-Tests):
 ```{r]}
-bf_total <- benford(je_2014$functional_amount)
-bf_total
-plot(bf_total)
+# Benford-Analyse für alle positiven Beiträge
+bf_pos <- je_2014 %>%
+  filter(functional_amount > 0) %>%
+  pull(functional_amount) %>%
+  benford()
 
-# getDuplicates(benford_test, je_2014_positive) %>%  View()
-# 
-# benford_3 <- benford(je_2014_test_positive$functional_amount, number.of.digits = 3)
-# 
-# benford(je_2014_test_gt_10$functional_amount, number.of.digits = 3)
-# 
-# extract.digits(je_2014_test_positive$functional_amount, number.of.digits = 3, digit)
+bf_pos
+plot(bf_pos)
+
+# Benford-Analyse für alle negativen Beiträge
+bf_neg <- je_2014 %>%
+  filter(functional_amount < 0) %>%
+  pull(functional_amount) %>%
+  benford(sign = "negative")
+
+bf_neg
+plot(bf_neg)
+
+# getSuspects(), getDuplicates() können genutzt werden um im Folgenden ne
 ```
 
-Last-Two-Digits-Test
+Viele negative Beträge mit 19 am Anfang: Könnte Hinweis auf Beiträge unter einer geiwssen Grenze sein.
+
+Last-Two-Digits-Test - liefert keine sinnvollen Ergebnisse, daher nochmal anschauen
 
 ```{r}
-last_two_digits_test <-
-  benford(
-    je_2014 %>%
-      filter(last_two_digits >= 10,
-             functional_amount < 0) %>% pull(last_two_digits),
-    number.of.digits = 2
-  )
+ltd_test_pos <- je_2014 %>%
+  filter(last_two_digits >= 10,
+         functional_amount > 0) %>% pull(last_two_digits) %>%
+  benford()
 
-last_two_digits_test
-plot(last_two_digits_test)
+ltd_test_neg <- je_2014 %>%
+  filter(last_two_digits >= 10,
+         functional_amount > 0) %>% pull(last_two_digits) %>%
+  benford()
 ```
 
 Benford-Analyse für Buchungen am Wochenende (inklusive genauerer Betrachtung):
@@ -587,6 +598,8 @@ map(users, ~ bf_by_user(.)$MAD.conformity)
 # To do: Threshold einbauen für Beträge nur über 10.00
 ```
 
+To do: Auch für Sourcegruppen und Konten durchführen.
+
 Fazit: Die Buchungen der zwei verdächtigen Benutzer folgen auf Basis einer First-Two-Digits-Benford-Analyse nicht dem Benfordschen Gesetz, dass tun aber Buchungen von anderen Benutzer (mit einer ähnlichen Anzahl von Buchungen) auch nicht. Daher diesbezüglich kein dringender Verdacht auf Manipulationen seitens dieser Benutzer. Die Benutzer sollten dennoch genauer betrachtet werden!
 
 ```{r}
@@ -610,7 +623,7 @@ plot(bf_SheAl01)
 To be done!
 
 ## Nächste Schritte: 
-* bf_by_user so implementieren, dass auch ursprünglichen Datenabrufbar sind
+* bf_by_user so verbessern bzw. implementieren, dass auch ursprünglichen Daten abrufbar sind
 * Nochmal prüfen, welche Spezifika für Benford-Analyse empfehlenswert sind (negativ und positive getrennt, nur mindestens zweistellige Zahlen, ...) -> Paper von Nigrini und Miller
 * Benford-Analysen nach Konto und Quellengruppe
 * Zeitreihen-Analyse
