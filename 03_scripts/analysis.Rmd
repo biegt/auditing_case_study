@@ -45,9 +45,9 @@ options(scipen = 1000000)
 ```
 
 # Verwendeter ETL-Prozesses
-Die Daten aus den bereitgestellten `MS Excel`-Dateien werden unter Verwendung des `readxl`-Packages unmittelbar in die globale Environment von `R` geladen. Hierbei ist darauf zu achten, dass die Daten innerhalb einer `MS Excel`-Datei gegebenenfalls auf mehrere Arbeitsblätter aufgegliedert sind. Obwohl die Datenmenge ingesamgt relativ umfassend ist, wird es ohne Weiteres möglich sein, diese Daten in den Arbeitsspeicher zu laden und entsprechende Analysen durchzuführen. Deswegen ist die Verwendung einer Datenbank im Rahmen des ETL-Prozesses nicht unbedingt notwendig.
+Die Daten aus den bereitgestellten `MS Excel`-Dateien werden unter Verwendung des `readxl`-Packages unmittelbar in die globale Environment von `R` geladen. Hierbei ist darauf zu achten, dass die Daten innerhalb einer `MS Excel`-Datei gegebenenfalls auf mehrere Arbeitsblätter aufgegliedert sind. Obwohl die Datenmenge insgesamt relativ umfassend ist, wird es ohne Weiteres möglich sein, diese Daten in den Arbeitsspeicher zu laden und entsprechende Analysen durchzuführen. Deswegen ist die Verwendung einer Datenbank im Rahmen des ETL-Prozesses nicht unbedingt notwendig.
 
-Für die Datenaufbereitung und -analyse wird wie bereits erwähnt die statstische Programmiersprache `R` verwendet. Dabei bedienen wir uns der umfangreichen Auswahl an Packages des `tidyverse` (z.B. `dyplr`, `tidyr`, `lubridate`). Für spezifische Analysen (zum Beispiel Benford- oder Zeitreihen-Analyse) werden darüber hinaus weitere Packages verwendet (zum Beispiel `benford.analysis` und `tsoutliers`). Um die Daten zu explorieren und Ergebnisse anschaulich darzustellen wird ein wesentlicher Schwerpunkt auch auf der Datenvisualisierung liegen. Diesbezüglich ist die Verwendung von Packages wie `ggplot2`, `shiny` und `plotly` angedacht.
+Für die Datenaufbereitung und -analyse wird wie bereits erwähnt die statistische Programmiersprache `R` verwendet. Dabei bedienen wir uns der umfangreichen Auswahl an Packages des `tidyverse` (z.B. `dyplr`, `tidyr`, `lubridate`). Für spezifische Analysen (zum Beispiel Benford- oder Zeitreihen-Analyse) werden darüber hinaus weitere Packages verwendet (zum Beispiel `benford.analysis` und `tsoutliers`). Um die Daten zu explorieren und Ergebnisse anschaulich darzustellen wird ein wesentlicher Schwerpunkt auch auf der Datenvisualisierung liegen. Diesbezüglich ist die Verwendung von Packages wie `ggplot2`, `shiny` und `plotly` angedacht.
 
 Für die Vorbereitung der Präsentation und die schriftliche Ausarbeitung werden wir in erster Linie `rmarkdown` verwenden, wobei ein Rückgriff auf andere Formate (z.B. `shiny`) nicht im Vorhinein ausgeschlossen ist.
 
@@ -118,7 +118,7 @@ Wie bereits im Konzept beschrieben, liegt der Schwerpunkt der Analyse auf der Pr
 * Quellenliste (Source Listing): Der Inhalt der Quellenliste ist nicht ganz schlüssig, da es scheint, als ob viele Einträge bloße Platzhalter enthalten. Ist mit der ABC Gesellschaft abzuklären.
 * Benutzerliste (User Listing): Enthält eine Zuordnung verschiedener Systembenutzer zu Benutzernamen und Departments.
 
-Der zentrale Datensatz für die Analyse ist das Buchungsjournal aus dem Jahr 2014. Entsprechend bezieht sich ein Großteil der folgenden Validitätschecks auf diesen Datensatz . Der Datensatz enthält `r length(unique(je_2014$je_number))` Journaleinträge mit Buchungen von `r length(unique(je_2014$gl_account_number))` Konten.
+Der zentrale Datensatz für die Analyse ist das Buchungsjournal aus dem Jahr 2014. Entsprechend bezieht sich ein Großteil der folgenden Validitätschecks auf diesen Datensatz. Der Datensatz enthält `r length(unique(je_2014$je_number))` Journaleinträge mit Buchungen von `r length(unique(je_2014$gl_account_number))` Konten.
 
 Überblick über die Daten (Buchungsjournal für das Jahr 2014):
 
@@ -204,7 +204,7 @@ tb_2014 %>%
   filter(func_diff_je != func_diff_tb)
 ```
 
-Der zurückgegebene Dataframe enthält 0 Zeilen. Also lässt isch annehmen, dass die Differenz von Anfangs- und Endsaldo zwischen dem Buchungsjournal und der Saldenliste für jedes Konto übereinstimmt.
+Der zurückgegebene Dataframe enthält 0 Zeilen. Also kann man annehmen, dass die Differenz von Anfangs- und Endsaldo zwischen dem Buchungsjournal und der Saldenliste für jedes Konto übereinstimmt.
 
 **Sind die Zeilennummern für jeden Journal-Eintrag lückenlos?**
 
@@ -275,11 +275,11 @@ Der überwiegende Teil der durchgeführten Validitätschecks fällt positiv aus.
 
 Außerdem ist anzumerken, dass die Datengrundlage Unvollständigkeiten aufweist, die die Prüfbarkeit einschränken (fehlenden Buchungsbeschreibungen, fehlende Buchungsuhrzeit).
 
-## Weitereführende Analyse mit der Schwerpunkt Betrugsermittelung
-Im folgenden werden weiterführende Analysen mit Schwerpunkt Betrugsermittelung durchgeführt. Ziel ist es Indizien zu für dolose Handlungen / betrügerische Aktivitäten zu finden. 
+## Weitereführende Analyse mit dem Schwerpunkt Betrugsermittlung
+Im folgenden werden weiterführende Analysen mit Schwerpunkt Betrugsermittlung durchgeführt. Ziel ist es Indizien für dolose Handlungen / betrügerische Aktivitäten zu finden. 
 
 ### Prüfungen der buchenden Personen
-Insgesamt haben `r length(unique(je_2014$preparer_id))` Benutzer durchgeführt.
+Insgesamt haben `r length(unique(je_2014$preparer_id))` Benutzer Buchungen durchgeführt.
 
 Verteilung der Buchungshäufigkeit:
 
@@ -331,6 +331,11 @@ je_2014 %>%
 Die initiale Analyse der Buchungszeilen ergab, dass es Journaleinträge mit lückenhaften Buchungszeilen gibt und diese Buchungen mit zwei Benutzern assoziiert sind: `SYS` und `SheAl01`. Im folgenden sollen diese beiden Benutzer und deren Buchungen noch genauer betrachtet werden.
 
 ```{r}
+incomplete_line_numbers_users <- je_2014 %>%
+  filter(je_number %in% incomplete_line_numbers) %>% 
+  pull(preparer_id) %>% 
+  unique
+
 users %>% 
   filter(user_name %in% incomplete_line_numbers_users) %>% 
   left_join(line_count, by = c("user_name" = "preparer_id"))
@@ -500,7 +505,7 @@ je_2014 <- je_2014 %>%
 Benford-Analyse:
 
 "Naive" Benford-Analyse für das gesamte Dataset (First-Two-Digits-Tests):
-```{r]}
+```{r}
 # Benford-Analyse für alle positiven Beiträge
 bf_pos <- je_2014 %>%
   filter(functional_amount > 0) %>%
