@@ -1,0 +1,221 @@
+---
+title: "Case Study ILV 2020 - Analyse"
+author: "Till Bieg, David Krug"
+date: "Juni 2020"
+output:
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
+    toc: true
+    toc_depth: 1
+    number_sections: true
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = 'center',
+  fig.width = 6.4,
+  fig.height = 3.6,
+  dev = c("svg"),
+  dpi = 500)
+
+library(tidyverse)
+library(readxl)
+library(here)
+library(summarytools)
+library(janitor)
+library(benford.analysis)
+library(conflicted)
+library(naniar)
+library(ggforce)
+library(lubridate)
+
+
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("here", "here")
+
+theme_set(theme_bw() + theme(text = element_text(size = 14)))
+
+options(scipen = 1000000)
+
+# ggsave("04_output/plots/testplot", test_plot, device = "svg", width = 16 * 0.8, height = 9 * 0.8)
+```
+
+
+# Beschreibung der Datenbasis, Validitätschecks und Analysen
+```{r dataimport, cache = TRUE, Echo = FALSE}
+# Datenimport
+je_2014 <- read_excel(here("02_data", "ABC 2014 JEs.xlsx"),
+                      na = "EY EMPTY") %>% 
+  clean_names()
+
+je_2014$effective_month <- month(as.Date(je_2014$effective_date))
+
+je_2013 <- read_excel(here("02_data", "ABC 2013 JEs.xlsx"),
+                     na = "EY EMPTY") %>%
+ clean_names()
+
+je_2013$effective_month <- month(as.Date(je_2013$effective_date))
+
+tb_2014 <- read_excel(
+  here("02_data", "ABC TB and CoA.xlsx"),
+  sheet = 1,
+  col_types = c(rep("guess", 3),
+                "numeric",
+                "numeric",
+                rep("guess", 7))
+) %>%
+  clean_names()
+
+coa <- read_excel(
+  here("02_data", "ABC TB and CoA.xlsx"),
+  sheet = 4,
+  na = "EY_EMPTY"
+) %>%
+  clean_names()
+
+users <- read_excel(
+  here("02_data", "ABC user listing.xlsx"),
+  sheet = 1,
+  na = "EY_EMPTY"
+) %>%
+  clean_names()
+```
+
+
+# Trendanalyse
+
+## Trend von effective_date und functional_amount
+
+```{r}
+
+je_2014.trendAmount <- je_2014 %>%
+  filter(functional_amount >= 0) %>%
+  select(effective_month, functional_amount) %>%
+  group_by(effective_month) %>%
+  summarize(functional_amount = sum(functional_amount, na.rm=TRUE))
+  
+
+je_2013.trendAmount <- je_2013 %>%
+  filter(functional_amount >= 0) %>%
+  select(effective_month, functional_amount) %>%
+  group_by(effective_month) %>%
+  summarize(functional_amount = sum(functional_amount, na.rm=TRUE))
+
+```
+
+```{r}
+ggplot() +
+geom_line(data=je_2014.trendAmount,aes(y=functional_amount,x= effective_month, colour="red")) +
+geom_line(data=je_2013.trendAmount,aes(y=functional_amount,x= effective_month, colour="green")) +
+scale_color_discrete(name = "Lines", labels = c("2013", "2014"))
+```
+
+In der Ganzjahresanalyse können wir sehen, dass die einzelnen Kurven voneinander abweichen.
+Während im Jahr 2014 insgesamt 4 Peaks bei den Umsätzen verzeichnet werden konnten, verlief das Jahr 2013 relativ konsistent.
+Im Generellen kann man sagen, dass das Geschäftsjahr 2014 ganz gut gegenüber dem Geschäftsjahr 2013 verlaufen ist.
+
+Die Frage ist, warum im 2., 7., 10. und 12. Monat so ein rasanter Anstieg verbucht wurde.
+
+Saisonale Bedingungen kann man nicht erkennen, da es bis auf dem 2. Quartal immer einen Up und Down gab.
+
+
+## Trend von effective_date und Anzahl der Buchungen
+
+```{r}
+
+je_2014.trendNumber <- je_2014 %>%
+  select(effective_month) %>%
+  group_by(effective_month) %>%
+  summarize(number = n())
+  
+
+je_2013.trendNumber <- je_2013 %>%
+  select(effective_month) %>%
+  group_by(effective_month) %>%
+  summarize(number = n())
+
+```
+
+```{r}
+ggplot() +
+geom_line(data=je_2014.trendNumber,aes(y=number,x= effective_month, colour="red")) +
+geom_line(data=je_2013.trendNumber,aes(y=number,x= effective_month, colour="green")) +
+scale_color_discrete(name = "Lines", labels = c("2013", "2014"))
+```
+
+
+Bei der Anzahl der Buchungen können wir sehen, dass das Jahr 2014 weniger Buchungen verzeichnet hat als das Jahr zuvor.
+Dennoch konnten wir in der vorhergehenden Analyse feststellen, dass die Summe vom functional_amount, speziell am Anfang des Jahres, die vom Jahr 2013 übersteigt.
+Schlussfolgernd, kann man sagen, dass zwar weniger gebucht wurde, dafür aber höhere Beträge.
+
+Fraglich ist, wieso die erste Hälfte der beiden Geschäftsjahre so stark voneinander abweichen, die zweite Hälfte allerdings gleich verläuft.
+
+Die Peaks von der vorherigen Analyse im Monat 7 und 10 zeichnen sich auch hier ab.Die von Monat 2 und 12 sind aber nicht klar erkenntlich.
+
+
+
+## Prüfung auf Ausreißer und Anomalien
+
+
+### Ausreißer beim gebuchten Betrag
+
+```{r}
+je_2014.positive <- je_2014 %>%
+  filter(functional_amount >= 0) %>%
+  select(effective_date, functional_amount) %>%
+  group_by(effective_date) %>%
+  summarize(functional_amount = sum(functional_amount, na.rm=TRUE), number = n())
+
+
+je_2014.positive$effective_date <- as.Date(je_2014.positive$effective_date)
+```
+
+
+```{r}
+boxplot(je_2014.positive$functional_amount, title="Amount")
+```
+
+
+Im Boxplot können wir einige Ausreißer nach oben erkennen.
+
+```{r}
+boxplot.outliers <- boxplot.stats(je_2014.positive$functional_amount)$out
+
+outliers.amount <- je_2014.positive %>% filter(functional_amount %in% boxplot.outliers)
+outliers.amount
+```
+
+```{r}
+ggplot() +
+geom_line(data=je_2014.positive,aes(y=functional_amount,x= effective_date),colour="grey") +
+geom_point(data=outliers.amount, aes(y=functional_amount, x=effective_date), colour="red", shape="o", size=4)
+```
+
+
+### Ausreißer bei der Anzahl der Buchungen
+```{r}
+boxplot(je_2014.positive$number, title="Number")
+```
+
+```{r}
+boxplot.outliers <- boxplot.stats(je_2014.positive$number)$out
+
+outliers.number <- je_2014.positive %>% filter(number %in% boxplot.outliers)
+outliers.number
+```
+
+```{r}
+ggplot() +
+geom_line(data=je_2014.positive,aes(y=number,x= effective_date),colour="grey") +
+geom_point(data=outliers.number, aes(y=number, x=effective_date), colour="red", shape="o", size=4)
+```
+
+
+## ToDo: Outlier detection with advanced algorithms
+
+
