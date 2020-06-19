@@ -103,6 +103,13 @@ users <- read_excel(
   na = "EY_EMPTY"
 ) %>%
   clean_names()
+
+sources <- read_excel(
+  here("02_data", "ABC source listing.xlsx"),
+  sheet = 1,
+  na = "EY_EMPTY"
+) %>%
+  clean_names()
 ```
 
 ## Beschreibung der Datenbasis und Checks zur Integrität
@@ -156,6 +163,38 @@ Zu bemerken ist, dass die `je_line_description` jedoch ingesamt keine bedeutsame
 ```{r}
 unique(je_2014$je_line_description)
 mean(str_detect(na.omit(je_2014$je_line_description), "JE Line Description"))
+```
+
+Weitere Analyse in Bezug auf fehlende für die anderen Dantesätze:
+
+Fehlende Werte in Bezug auf den Kontenplan:
+
+```{r}
+miss_var_summary(coa)
+```
+
+Fehlende Werte in Bezug auf die Saldenliste:
+
+```{r}
+miss_var_summary(tb_2014)
+```
+
+Fehlende Werte in Bezug auf die Benutzerliste:
+
+```{r}
+miss_var_summary(users)
+```
+
+Fehlende Werte in Bezug auf die Quellenliste:
+
+```{r}
+miss_case_summary(source)
+
+# Anzahl an Fällen mit Platzhaltern
+sources %>%
+  mutate(ph_descr = str_detect(source_description, "Source description"),
+         ph_grp = str_detect(source_group, "Source group")) %>% 
+  summarize_at(vars(ph_descr, ph_grp), list(prop = mean, count = sum))
 ```
 
 Des Weiteren fehlen in dem Datensatz Angaben zur Uhrzeit der Buchung, was die Prüfbarkeit der Daten weiter einschränkt. Mithilfe der Uhrzeit ließen sich Buchungen außerhalb der üblichen Geschäftszeiten identifizieren, die wiederum ein Hinweis auf dolose Handlungen sein können. Bei der Benutzerliste fehlt auch die Rolle und Titel der jeweilige Benutzer, die zur genauen Prüfung der Daten ggf. vorteilhaft wären.
@@ -246,14 +285,14 @@ Benutzer, die mit diesen Buchungen assoziiert sind:
 
 Quellen / Quellengruppen, die mit diesen Buchungen assoziiert sind:
 ```{r}
-(incomplete_line_numbers_users <- je_2014 %>%
+(incomplete_line_numbers_sources <- je_2014 %>%
   filter(je_number %in% incomplete_line_numbers) %>% 
   pull(source) %>% 
   unique)
 ```
 
 ```{r}
-(incomplete_line_numbers_users <- je_2014 %>%
+(incomplete_line_numbers_source_group <- je_2014 %>%
   filter(je_number %in% incomplete_line_numbers) %>% 
   pull(source_group) %>% 
   unique)
@@ -261,12 +300,11 @@ Quellen / Quellengruppen, die mit diesen Buchungen assoziiert sind:
 
 Assoziierte Konten:
 ```{r}
-(incomplete_line_numbers_users <- je_2014 %>%
+(incomplete_line_numbers_accounts <- je_2014 %>%
   filter(je_number %in% incomplete_line_numbers) %>% 
   pull(gl_account_code) %>% 
   unique)
 ```
-
 
 Bei einigen Einträgen fehlen bis zu vier Zeilennummern. Die Buchungen wurden von insgesamt zwei BenutzerInnen (`SYS` und `SheAl01`) durchgeführt und beziehen sich auf zwei Quellen (`Accurals` und `Goods receipts`). Insgesamt ein erstes interessantes Ergebnis, das mit dem Management des geprüften Unternehmens besprochen werden und im Laufe der weiteren Analyse unbedingt genauer untersucht werden sollte.
 
@@ -596,9 +634,9 @@ bf_by_user <- function(user, sign = "positive") {
   
 }
 
-users <- je_2014 %>% count(preparer_id, sort = TRUE) %>% pull(preparer_id)
+user_names <- je_2014 %>% count(preparer_id, sort = TRUE) %>% pull(preparer_id)
 
-map(users, ~ bf_by_user(.)$MAD.conformity)
+map(user_names, ~ bf_by_user(.)$MAD.conformity)
 
 # To do: Threshold einbauen für Beträge nur über 10.00
 ```
