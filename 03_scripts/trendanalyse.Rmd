@@ -115,7 +115,8 @@ je_2013.trendAmount <- je_2013 %>%
 ggplot() +
 geom_line(data=je_2014.trendAmount,aes(y=functional_amount,x= effective_month, colour="red")) +
 geom_line(data=je_2013.trendAmount,aes(y=functional_amount,x= effective_month, colour="green")) +
-scale_color_discrete(name = "Lines", labels = c("2013", "2014"))
+scale_color_discrete(name = "Legende", labels = c("2013", "2014")) + 
+labs(x = "Monat", y = "Betrag")
 ```
 
 In der Ganzjahresanalyse können wir sehen, dass die einzelnen Kurven voneinander abweichen.
@@ -148,7 +149,9 @@ je_2013.trendNumber <- je_2013 %>%
 ggplot() +
 geom_line(data=je_2014.trendNumber,aes(y=number,x= effective_month, colour="red")) +
 geom_line(data=je_2013.trendNumber,aes(y=number,x= effective_month, colour="green")) +
-scale_color_discrete(name = "Lines", labels = c("2013", "2014"))
+scale_color_discrete(name = "Legende", labels = c("2013", "2014")) +
+labs(x = "Monat", y = "Anzahl der Buchungen")
+
 ```
 
 
@@ -179,6 +182,8 @@ je_2014.positive$effective_date <- as.Date(je_2014.positive$effective_date)
 boxplot(je_2014.positive$functional_amount, title="Amount")
 ```
 
+
+Ausreißer die sehr oft vorkommen:
 ```{r}
 boxplot.outliers <- boxplot.stats(je_2014.positive$functional_amount)$out
 
@@ -187,7 +192,12 @@ outliers.amount <- outliers.amount %>%
   group_by(functional_amount) %>%
   summarize(effective_date = list(unique(effective_date)), number = n())
 
-outliers.amount[order(outliers.amount$number,decreasing = TRUE),]
+head(outliers.amount[order(outliers.amount$number,decreasing = TRUE),], n =10)
+```
+
+Ausreißer mit einem hohen Betrag
+```{r}
+head(outliers.amount[order(outliers.amount$functional_amount,decreasing = TRUE),],n=10)
 ```
 
 
@@ -202,6 +212,16 @@ je_2014.positive <- je_2014 %>%
 
 
 je_2014.positive$effective_date <- as.Date(je_2014.positive$effective_date)
+
+
+je_2013.positive <- je_2013 %>%
+  filter(functional_amount >= 0) %>%
+  select(effective_date, functional_amount) %>%
+  group_by(effective_date) %>%
+  summarize(functional_amount = sum(functional_amount, na.rm=TRUE), number = n())
+
+
+je_2013.positive$effective_date <- as.Date(je_2013.positive$effective_date)
 ```
 
 
@@ -222,7 +242,9 @@ outliers.amount
 ```{r}
 ggplot() +
 geom_line(data=je_2014.positive,aes(y=functional_amount,x= effective_date),colour="grey") +
-geom_point(data=outliers.amount, aes(y=functional_amount, x=effective_date), colour="red", shape="o", size=4)
+geom_point(data=outliers.amount, aes(y=functional_amount, x=effective_date), colour="red", shape="o", size=4) + 
+labs(x = "Buchungsdatum", y = "Betrag") +
+ggtitle("Summme der gebuchten Beträge pro Tag \n")
 ```
 
 
@@ -235,7 +257,7 @@ boxplot(je_2014.positive$number, title="Number")
 boxplot.outliers <- boxplot.stats(je_2014.positive$number)$out
 
 outliers.number <- je_2014.positive %>% filter(number %in% boxplot.outliers)
-outliers.number
+head(outliers.number, n=10)
 ```
 
 Am Monatsletzten immer sehr viele Buchungen
@@ -243,16 +265,38 @@ Am Monatsletzten immer sehr viele Buchungen
 ```{r}
 ggplot() +
 geom_line(data=je_2014.positive,aes(y=number,x= effective_date),colour="grey") +
-geom_point(data=outliers.number, aes(y=number, x=effective_date), colour="red", shape="o", size=4)
+geom_point(data=outliers.number, aes(y=number, x=effective_date), colour="red", shape="o", size=4) +
+labs(x = "Buchungsdatum", y = "Anzahl") +
+ggtitle("Anzahl der Buchungen pro Tag \n")
 ```
 
+
+Wie schauts 2013 aus?
+
+```{r}
+boxplot.outliers <- boxplot.stats(je_2013.positive$number)$out
+
+outliers.number <- je_2013.positive %>% filter(number %in% boxplot.outliers)
+head(outliers.number, n=10)
+```
+
+Am Monatsletzten immer sehr viele Buchungen
+
+```{r}
+ggplot() +
+geom_line(data=je_2014.positive,aes(y=number,x= effective_date),colour="grey") +
+geom_line(data=je_2013.positive,aes(y=number,x= effective_date),colour="red") +
+labs(x = "Buchungsdatum", y = "Anzahl") +
+ggtitle("Anzahl der Buchungen pro Tag \n")
+```
 
 ## Anomalien mittels Isolation Forest entdecken
 
 ```{r}
 ggplot(je_2014.positive, aes(x= number, y= functional_amount)) +
   geom_point(shape = 1, alpha = 0.5) +
-  labs(x= "Number", y = "Amount")
+  labs(x= "Anzahl der Buchungen", y = "Summe (gebuchter Betrag)")+
+  ggtitle("Buchungsbetrag im Vergleich \nzu der Anzahl der Buchungen \n")
 ```
 
 ```{r}
@@ -262,19 +306,20 @@ iso_data <- je_2014.positive[4:5]
 forest <-isolationForest$new()
 forest$fit(iso_data)
 je_2014.positive$pred <- forest$scores$anomaly_score
-je_2014.positive$outlier <- as.factor(ifelse(je_2014.positive$pred >= 0.50,"outlier","normal"))
+#Eigentlich wäre alles über 0.5 ein Ausreißer, für unsere Analyse wollen wir aber stichprobenartige Erkenntnisse, deswegen können wir stärker einschränken
+je_2014.positive$outlier <- as.factor(ifelse(je_2014.positive$pred >= 0.60,"outlier","normal"))
 ```
 
 ```{r}
-je_2014.positive[je_2014.positive$outlier == "outlier",]
+head(je_2014.positive[je_2014.positive$outlier == "outlier",][1:3],n=15)
 ```
 
 
 ```{r}
-ggplot(iso_data, aes(x = number, y = functional_amount, color = outlier)) + 
+ggplot(je_2014.positive, aes(x = number, y = functional_amount, color = outlier)) + 
   geom_point(shape = 1, alpha = 0.5) +
-  labs(x = "Number", y = "Amount") +
-  labs(alpha = "", colour="Legend")
+  labs(x = "Anzahl", y = "Betrag") +
+  labs(alpha = "", colour="Legende", title = "Ausreißer im Bezug auf Anzahl und Betrag \n(Summiert auf den Tag)\n")
 ```
 
 
@@ -303,7 +348,7 @@ top10_accounts <- head(account_df[order(account_df$deviation, decreasing = TRUE)
 ggplot(top10_accounts,aes(x = gl_account_code, y = deviation)) +
 geom_col(fill = "#36cfb3") + 
 labs(x = "Kontoklasse",
-     y = "Abweichung zum Vorjahr") +
+     y = "Abweichung zum Vorjahr (2013)") +
 coord_flip()
 ```
 
@@ -311,7 +356,7 @@ Warum weichen die oben angeführten Kontoklassen so stark vom Vorjahr ab?
 Speziell die 4 mit einer Abweichung von über 1000%
 
 ```{r}
-top10_accounts
+head(top10_accounts,n=10)
 ```
 
 
@@ -340,18 +385,23 @@ top10_amounts$functional_amount <- as.character(top10_amounts$functional_amount)
 
 ggplot(top10_amounts,aes(y = functional_amount, x = deviation)) +
 geom_col(fill = "#36cfb3") + 
-labs(x = "Abweichung zum Vorjahr",
+labs(x = "Abweichung zum Vorjahr (2013)",
      y = "Betrag")
 ```
 
 ```{r}
-amount_df[order(amount_df$deviation, decreasing = TRUE),]
+head(top10_amounts,n=10)
 ```
 
-Sind Beträge die genau um 1 Abweichen auch auffällig? Vielleicht wurde eine Abschreibung falsch verbucht oder eine 2mal ausgestellt.
+Sind Beträge die genau um 1 Abweichen auch auffällig? Vielleicht wurde eine Abschreibung falsch verbucht oder eine 2mal ausgestellt oder ein Fehler bei einem Dauerauftrag.
 Viele Beträge die davor  fast nie gebucht wurden und danach sehr oft.
 
 ```{r}
-top10_amounts
+
+little_deviation = amount_df[abs(amount_df$number.x - amount_df$number.y) > 0 & abs(amount_df$number.x - amount_df$number.y) < 3,]
+
+
+top10_amounts <- head(little_deviation[order(little_deviation$functional_amount, decreasing = TRUE),], n=10)
+head(top10_amounts,n=10)
 ```
 
