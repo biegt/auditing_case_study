@@ -32,6 +32,7 @@ library(conflicted)
 library(naniar)
 library(ggforce)
 library(lubridate)
+library(viridis)
 
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
@@ -188,7 +189,7 @@ miss_var_summary(users)
 Fehlende Werte in Bezug auf die Quellenliste:
 
 ```{r}
-miss_case_summary(source)
+miss_case_summary(sources)
 
 # Anzahl an Fällen mit Platzhaltern
 sources %>%
@@ -400,6 +401,65 @@ je_2014 %>%
   scale_x_discrete(labels = rev(month_vec))
 ```
 
+Weitere Exploration der Buchungshäufigkeiten pro Monar / Jahr
+```{r}
+je_2014 <- je_2014 %>% 
+  mutate(entry_month = month(entry_date),
+         eff_month = month(effective_date)) 
+
+je_2014 %>% 
+  ggplot(aes(x = as.factor(entry_month))) +
+  geom_bar(fill = "#36cfb3")
+
+je_2014 %>% 
+  ggplot(aes(x = as.factor(eff_month))) +
+  geom_bar(fill = "#36cfb3")
+
+je_2014 %>% count(eff_month)
+je_2014 %>% count(entry_month)
+je_2014 %>% count(effective_date, sort = TRUE)
+je_2014 %>% count(entry_date, sort = TRUE)
+```
+
+```{r, fig.width = 8, fig.height = 3.6}
+je_2014 %>% count(effective_date) %>% 
+  separate(effective_date, into = c("year", "month", "day")) %>% 
+  ggplot(aes(y = fct_rev(as.factor(month)), x = as.factor(day), fill = n)) +
+  geom_tile() +
+  scale_fill_viridis() +
+  scale_y_discrete(name = "", labels = rev(month_vec)) +
+  scale_x_discrete(name = "Tag") +
+  theme_classic() +
+  geom_tile(data = tibble(
+                    month = as.factor(c(rep("02", 3),
+                                        "04", "06", "09", "11")),
+                    day = as.factor(c(29, 30, rep(31, 5)))),
+            fill = "#ededed") +
+  scale_fill_viridis(name = "Anzahl Buchungen") +
+  scale_y_discrete(name = "", labels = rev(month_vec)) +
+  scale_x_discrete(name = "Tag") +
+  theme_classic()
+```
+
+```{r, fig.width = 8, fig.height = 3.6}
+je_2014 %>% count(entry_date) %>%
+  separate(entry_date, into = c("year", "month", "day")) %>%
+  ggplot(aes(
+    y = fct_rev(as.factor(month)),
+    x = as.factor(day),
+    fill = n)) +
+  geom_tile() +
+  geom_tile(data = tibble(
+                    month = as.factor(c(rep("02", 3),
+                                        "04", "06", "09", "11")),
+                    day = as.factor(c(29, 30, rep(31, 5)))),
+            fill = "#ededed") +
+  scale_fill_viridis(name = "Anzahl Buchungen") +
+  scale_y_discrete(name = "", labels = rev(month_vec)) +
+  scale_x_discrete(name = "Tag") +
+  theme_classic()
+```
+
 Als nächstes wird geprüft, ob Belegdaten nicht nach dem jeweiligen Erfassungsdatum und jeweils immer im Geschäftsjahr 2014 eingetragen werden. 
 
 ```{r}
@@ -410,16 +470,22 @@ Alle Belegdaten liegen im Jahr 2014.
 
 ```{r}
 mean(year(je_2014$entry_date) != 2014)
+je_2014 %>% filter(year(entry_date) != 2014) 
+je_2014 %>% filter(year(entry_date) == 2015) %>% nrow()
+je_2014 %>% filter(year(entry_date) == 2013) %>% nrow()
 ```
 
-Einige Erfassungsdaten liegen nicht Jahr 2014. Das ist aber an sich kein Widerspruch und aus Sicht der Integrität in Ordnung. 
+Einige Erfassungsdaten liegen nicht Jahr 2014. Das ist aber an sich kein Widerspruch und aus Sicht der Integrität in Ordnung.
 
 ```{r}
 eff_date_after_ent_data <- je_2014 %>% 
-  filter(!effective_date <= entry_date) %>% pull(je_line_number)
+  filter(effective_date > entry_date) %>% pull(je_line_number)
+
+# je_2014 %>%
+#   filter(effective_date > entry_date) %>% View()
 ```
 
-Allerdings gibt es insgesamt `r eff_date_after_ent_data %>% length()`. Dies ist aus Sicht der Datenintegrität problematisch und sollte mit dem Management der ABC-Gesellschaft besprochen werden. 
+Allerdings gibt es insgesamt `r eff_date_after_ent_data %>% length()` Einträge bei denen das Belegdatum nach dem Erfassungsdatum liegt. Dies ist aus Sicht der Datenintegrität problematisch und sollte mit dem Management der ABC-Gesellschaft besprochen werden. 
 
 Als nächstes wird geprüft, ob Buchungen am Wochenende stattgefunden haben.
 
@@ -464,25 +530,61 @@ je_2014 %>% count(weekday_entry_date) %>%
 
 Auf Basis der Analyse zeigt sich, dass mehrere tausend Einträge existieren, die an einem Wochenende "belegt" oder erfasst wurden. Das ist an sich noch kein Widerspruch - denn je nach Unternehmen sind Buchungen am Wochenende durchaus üblich. Dieses Ergebnis sollte auch mit dem Management der ABC-Gesellschaft abgeklärt werden.
 
-Noch genauer zu untersuchen: Häufung von Buchungen am Jahresende.
+Buchungsdaten von Einträgen mit lückenhaften Zeilen
+```{r}
+# je_2014 %>% filter(je_number %in% incomplete_line_numbers) %>% View()
+```
+
+```{r}
+je_2014 %>% filter(je_number == "2014-0001-4200050312") %>% 
+  left_join(coa)
+```
+
 
 ### Prüfung der verwendeten Konten
 
-Konten die mit Journaleinträgen mit unvollstänidgen Zeilennummern assoziiert sind:
+Konten, die mit Journaleinträgen mit unvollstänidgen Zeilennummern assoziiert sind:
 
 ```{r}
 incomplete_line_numbers_accounts <- je_2014 %>% filter(je_number %in% incomplete_line_numbers) %>% pull(gl_account_code) %>% unique()
 
-account_counts <- je_2014 %>% 
+account_count <- je_2014 %>% 
   count(gl_account_code) %>% 
   left_join(coa)
 
-account_counts %>% 
-  filter(gl_account_code %in% incomplete_line_numbers_accounts) %>% 
-  glimpse()
+# account_count %>% 
+#   filter(gl_account_code %in% incomplete_line_numbers_accounts) %>% 
+#   View()
 ```
 
-Muss man sich noch näher ansehen...
+```{r}
+account_count %>% 
+  ggplot(aes(y = n, x = 1)) +
+  geom_boxplot(color = "#36cfb3", width = 0.7, outlier.alpha = 0) +
+  labs(y = "Buchungshäufigkeit") +
+  theme(axis.title.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.x = element_blank()) +
+  expand_limits(x = c(0.5, 1.5)) +
+  geom_sina(color = "#36cfb3", maxwidth = 0.2, size = 2, alpha = 0.2) +
+  scale_y_log10(breaks = c(10, 100, 1000, 10000, 100000))
+```
+
+Buchungshäufigkeit nach Konto und Kontotyp
+```{r}
+account_count %>% 
+  ggplot(aes(y = n, x = account_type)) +
+  geom_boxplot(color = "#36cfb3", width = 0.7, outlier.alpha = 0) +
+  scale_y_log10(breaks = c(10, 100, 1000, 10000, 100000))
+```
+
+```{r}
+je_2014 %>% filter(
+gl_account_code %in% (account_count %>% 
+  filter(n < 10) %>% pull(gl_account_code))) %>%
+  View()
+```
+
 
 ### Prüfung der Höhe beziehungsweise Ziffern und Beträgen
 
@@ -542,6 +644,26 @@ je_2014 <- je_2014 %>%
 
 Benford-Analyse:
 
+```{r}
+# Funktion um Benford-Analyse mit ggplot zu plotten
+ggplot_benford <- function(benford_object, unique_breaks = c(19, 39, 59, 79, 99)) {
+  
+  benford_object[["bfd"]] %>%
+    ggplot(aes(x = digits, y = data.dist.freq)) +
+    geom_col(fill = "#36cfb3") +
+    geom_line(
+      aes(y = benford.dist.freq),
+      color = "#4f4f4f",
+      size = 1.1,
+      linetype = "dashed"
+    ) +
+    labs(x = "Ziffern", y = "Häufigkeit") +
+    scale_x_continuous(breaks = unique_breaks)
+  
+}
+```
+
+
 "Naive" Benford-Analyse für das gesamte Dataset (First-Two-Digits-Tests):
 ```{r}
 # Benford-Analyse für alle positiven Beiträge
@@ -551,8 +673,27 @@ bf_pos <- je_2014 %>%
   benford()
 
 bf_pos
-plot(bf_pos)
+ggplot_benford(bf_pos)
+```
 
+"Naive" Benford-Analyse für das gesamte Dataset (First-Digit-Test):
+```{r}
+library(plotly)
+
+# Benford-Analyse für alle positiven Beiträge
+bf_pos_fd <- je_2014 %>%
+  filter(functional_amount > 0) %>%
+  pull(functional_amount) %>%
+  benford(number.of.digits = 1)
+
+bf_pos_fd
+ggplot_benford(bf_pos_fd)
+plot(bf_pos_fd)
+
+# ggplot_benford(bf_pos_fd) %>% ggplotly()
+```
+
+```{r}
 # Benford-Analyse für alle negativen Beiträge
 bf_neg <- je_2014 %>%
   filter(functional_amount < 0) %>%
@@ -560,7 +701,35 @@ bf_neg <- je_2014 %>%
   benford(sign = "negative")
 
 bf_neg
-plot(bf_neg)
+ggplot_benford(bf_neg)
+
+# Beispiel für getSuspects und getDuplicates
+# getSuspects(bf_neg, je_2014 %>% filter(functional_amount < 0), how.many = 1) %>% 
+#   filter(functional_amount > -100000) %>% 
+#   ggplot(aes(x = 1, y = functional_amount)) +
+#   geom_boxplot()
+# 
+# getDuplicates(bf_neg, je_2014 %>% filter(functional_amount < 0), how.many = 3) %>% View()getSuspects(bf_neg, je_2014 %>% filter(functional_amount < 0), how.many = 1) %>% 
+#   filter(functional_amount > -100000) %>% 
+#   ggplot(aes(x = 1, y = functional_amount)) +
+#   geom_boxplot()
+# 
+# getDuplicates(bf_neg, je_2014 %>% filter(functional_amount < 0), how.many = 3) %>% View()
+
+# getSuspects(), getDuplicates() können genutzt werden um im Folgenden ne
+```
+
+Benford, negative Beträge, nur erste Ziffer:
+```{r}
+# Benford-Analyse für alle negativen Beiträge
+bf_neg_fd <- je_2014 %>%
+  filter(functional_amount < 0) %>%
+  pull(functional_amount) %>%
+  benford(sign = "negative", number.of.digits = 1)
+
+bf_neg_fd
+ggplot_benford(bf_neg_fd)
+plot(bf_neg_fd)
 
 # getSuspects(), getDuplicates() können genutzt werden um im Folgenden ne
 ```
@@ -613,53 +782,99 @@ To do: Check wegen empfohlenen Spezifika für Benford-Analyse. Vielleicht noch d
 Benfort-Analyse für verschiedene Benutzer:
 
 ```{r}
-bf_by_user <- function(user, sign = "positive") {
+# Funktion um Benford-Analyse "automatisiert für verschiedene Variablen auszuführen
+benford_by_variable <- function(data = je_2014, value, variable, sign = "positive", n_digits = 2) {
+  
+  variable <- enquo(variable)
+  
   if (sign == "positive") {
-    je_2014_bf <- je_2014 %>%
-      filter(preparer_id == user) %>%
+    bf_data <- data %>%
+      filter(!!variable == value) %>%
       filter(functional_amount > 0)
     
-    bf <- je_2014_bf %>% pull(functional_amount) %>%
-      benford(sign = "positive")
+    bf <- bf_data %>% pull(functional_amount) %>%
+      benford(sign = "positive", number.of.digits = n_digits)
   } else {
-    je_2014_bf <- je_2014 %>%
-      filter(preparer_id == user) %>%
+    bf_data <- data %>%
+      filter(!!variable == value) %>%
       filter(functional_amount < 0)
     
-    bf <- je_2014_bf %>% pull(functional_amount) %>%
-      benford(sign = "negative")
+    bf <- bf_data %>% pull(functional_amount) %>%
+      benford(sign = "negative", number.of.digits = n_digits)
   }
   
-  bf
+  return(list(bf = bf, bf_data = bf_data))
   
 }
-
-user_names <- je_2014 %>% count(preparer_id, sort = TRUE) %>% pull(preparer_id)
-
-map(user_names, ~ bf_by_user(.)$MAD.conformity)
-
-# To do: Threshold einbauen für Beträge nur über 10.00
 ```
 
-To do: Auch für Sourcegruppen und Konten durchführen.
+Benford-Analyse nach Benutzern:
+
+```{r}
+user_names <- je_2014 %>% count(preparer_id, sort = TRUE) %>% filter(n > 10000) %>% pull(preparer_id)
+
+benford_by_user <- map(user_names, ~ benford_by_variable(value = ., variable = preparer_id, n_digits = 1)) 
+
+map(benford_by_user, 1) %>% map_chr("MAD.conformity")
+map(benford_by_user, 1) %>% map2(user_names, ~ ggplot_benford(.x) + ggtitle(.y))
+```
+
+Benford-Analyse nach Kontotypen:
+
+Positive Beträge:
+```{r}
+je_2014 <- je_2014 %>% left_join(coa %>% select(gl_account_code, account_type))
+
+account_types <- je_2014 %>% count(account_type, sort = TRUE) %>% filter(n > 2000) %>%  pull(account_type)
+
+benford_by_account_pos <- map(account_types, ~ benford_by_variable(value = ., variable= account_type))
+
+map(benford_by_account_pos, 1) %>% map_chr("MAD.conformity")
+account_post_plot_list <-
+  map(benford_by_account_pos, 1) %>% map2(account_types,
+                                          ~ ggplot_benford(.x) +
+                                            ggtitle(paste(.y,
+                                                          "(positive Beträge)")) + theme(text = element_text(size = 12)))
+```
+
+Negative Beträge:
+```{r}
+benford_by_account_neg <- map(account_types, ~ benford_by_variable(value = ., variable = account_type, sign = "negative"))
+
+map(benford_by_account_neg, 1) %>% map_chr("MAD.conformity")
+account_neg_plot_list <- map(benford_by_account_neg, 1) %>%  map2(account_types, ~ ggplot_benford(.x) + ggtitle(paste(.y, "(negative Beträge)")) + theme(text = element_text(size = 12)))
+```
+
+```{r, fig.height = 10, fig_width = 7.5}
+library(cowplot) 
+
+test_list <- c(account_pos_plot_list, account_neg_plot_list)[c(1, 5, 2, 6, 3, 7, 4, 8)]
+
+do.call(plot_grid, c(test_list, ncol = 2))
+```
+
+Größte Abweichungen nach Kontotypen und positiven Beträgen:
+```{r}
+high_dev_pos_by_acc <- map(benford_by_account_pos,
+    ~.x[[1]][["bfd"]] %>%
+      select(digits, absolute.diff) %>%
+      top_n(10) %>%
+      arrange(desc(absolute.diff))
+)
+```
+
+Größte Abweichungen nach Kontotypen und negativen Beträgen:
+```{r}
+high_dev_neg_by_acc <- map(benford_by_account_neg,
+    ~.x[[1]][["bfd"]] %>%
+      select(digits, absolute.diff) %>%
+      top_n(5) %>%
+      arrange(desc(absolute.diff))
+)
+```
+
 
 Fazit: Die Buchungen der zwei verdächtigen Benutzer folgen auf Basis einer First-Two-Digits-Benford-Analyse nicht dem Benfordschen Gesetz, dass tun aber Buchungen von anderen Benutzer (mit einer ähnlichen Anzahl von Buchungen) auch nicht. Daher diesbezüglich kein dringender Verdacht auf Manipulationen seitens dieser Benutzer. Die Benutzer sollten dennoch genauer betrachtet werden!
-
-```{r}
-bf_SYS <- bf_by_user("SYS", sign = "negative")
-bf_SYS
-plot(bf_SYS)
-# getSuspects(bf_SYS, je_2014_SYS) %>% View()
-# getDuplicates(bf_SYS, je_2014_SYS) %>% View()
-```
-
-```{r}
-bf_SheAl01 <- bf_by_user("SheAl01", sign = "negative")
-bf_SheAl01
-plot(bf_SheAl01)
-# getSuspects(bf_SheAl01, je_2014) %>% View()
-# getDuplicates(bf_SheAl01 , je_2014) %>% View()
-```
 
 ### Prüfungen auf Unterschiede zum Vorjahr (Trendanalysen)
 
