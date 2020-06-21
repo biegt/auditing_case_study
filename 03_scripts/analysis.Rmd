@@ -678,17 +678,17 @@ ggplot_benford(bf_pos)
 
 "Naive" Benford-Analyse für das gesamte Dataset (First-Digit-Test):
 ```{r}
-library(plotly)
-
-# Benford-Analyse für alle positiven Beiträge
-bf_pos_fd <- je_2014 %>%
-  filter(functional_amount > 0) %>%
-  pull(functional_amount) %>%
-  benford(number.of.digits = 1)
-
-bf_pos_fd
-ggplot_benford(bf_pos_fd)
-plot(bf_pos_fd)
+# library(plotly)
+# 
+# # Benford-Analyse für alle positiven Beiträge
+# bf_pos_fd <- je_2014 %>%
+#   filter(functional_amount > 0) %>%
+#   pull(functional_amount) %>%
+#   benford(number.of.digits = 1)
+# 
+# bf_pos_fd
+# ggplot_benford(bf_pos_fd)
+# plot(bf_pos_fd)
 
 # ggplot_benford(bf_pos_fd) %>% ggplotly()
 ```
@@ -719,6 +719,29 @@ ggplot_benford(bf_neg)
 # getSuspects(), getDuplicates() können genutzt werden um im Folgenden ne
 ```
 
+Verdächtige Buchungszeilen auf Basis der allgemeien Benford-Analyse genauer betrachten.
+```{r}
+rare_accounts <- je_2014 %>% count(gl_account_code) %>% filter(n < 10) %>% pull(gl_account_code)
+
+pos_suspects <- getSuspects(bf_pos,
+            je_2014 %>%
+              filter(functional_amount > 0),
+            how.many = 1)
+
+pos_suspects %>% filter(preparer_id %in% c("SheAl01", "SYS")) %>% glimpse()
+pos_suspects %>% filter(effective_date > entry_date) %>% glimpse()
+pos_suspects %>% filter(year(entry_date) == 2013) %>% glimpse()
+pos_suspects %>% filter(je_number %in% incomplete_line_numbers) %>% glimpse()
+pos_suspects %>% filter(gl_account_code %in% rare_accounts) %>% glimpse()
+# getSuspects %>% filter (verdächtige user)
+# getsuspects() %>% filter(seltenen Konten)
+# getSuspects() %>% (verdächtige Buchungstage, Erfassungsdatum vor Belegdatum)
+# Buchungen am Wochenende? 
+
+pos_suspects %>% count(preparer_id)
+```
+
+
 Benford, negative Beträge, nur erste Ziffer:
 ```{r}
 # Benford-Analyse für alle negativen Beiträge
@@ -736,7 +759,7 @@ plot(bf_neg_fd)
 
 Viele negative Beträge mit 19 am Anfang: Könnte Hinweis auf Beiträge unter einer geiwssen Grenze sein.
 
-Last-Two-Digits-Test - liefert keine sinnvollen Ergebnisse, daher nochmal anschauen
+Last-Two-Digits-Test - liefert keine sinnvollen Ergebnisse, daher keine Ergebnisse daraus berichten.
 
 ```{r}
 ltd_test_pos <- je_2014 %>%
@@ -830,7 +853,7 @@ account_types <- je_2014 %>% count(account_type, sort = TRUE) %>% filter(n > 200
 benford_by_account_pos <- map(account_types, ~ benford_by_variable(value = ., variable= account_type))
 
 map(benford_by_account_pos, 1) %>% map_chr("MAD.conformity")
-account_post_plot_list <-
+account_pos_plot_list <-
   map(benford_by_account_pos, 1) %>% map2(account_types,
                                           ~ ggplot_benford(.x) +
                                             ggtitle(paste(.y,
@@ -873,26 +896,4 @@ high_dev_neg_by_acc <- map(benford_by_account_neg,
 )
 ```
 
-
-Fazit: Die Buchungen der zwei verdächtigen Benutzer folgen auf Basis einer First-Two-Digits-Benford-Analyse nicht dem Benfordschen Gesetz, dass tun aber Buchungen von anderen Benutzer (mit einer ähnlichen Anzahl von Buchungen) auch nicht. Daher diesbezüglich kein dringender Verdacht auf Manipulationen seitens dieser Benutzer. Die Benutzer sollten dennoch genauer betrachtet werden!
-
-### Prüfungen auf Unterschiede zum Vorjahr (Trendanalysen)
-
-To be done!
-
-## Nächste Schritte: 
-* bf_by_user so verbessern bzw. implementieren, dass auch ursprünglichen Daten abrufbar sind
-* Nochmal prüfen, welche Spezifika für Benford-Analyse empfehlenswert sind (negativ und positive getrennt, nur mindestens zweistellige Zahlen, ...) -> Paper von Nigrini und Miller
-* Benford-Analysen nach Konto und Quellengruppe
-* Zeitreihen-Analyse
-* Word und Powerpoint anfangen und dort mal alles was schon fix ist reinhauen! 
-* Datensätze bezüglich möglichen Untergliederungen explorieren
-* Schnittmengen zwischen den verschiedenen Indizien anschauen
-
-## Zusammenfassung bisher:
-Hinweise auf dolose Handlungen / Verletzungen der Integrität:
- 
- * Einträge mit vollständigen Zeilennummern
- * Einträge mit Eintragsdatum vor Belegdatum
- * Einträge mit Beleg- und/oder Erfassungsdatum am Wochenende
 
