@@ -540,6 +540,11 @@ je_2014 %>% filter(je_number == "2014-0001-4200050312") %>%
   left_join(coa)
 ```
 
+Prüfung auf lückenhafte Buchungszeilen am Wochenende
+```{r}
+je_2014 %>% filter(je_number %in% incomplete_line_numbers,
+                   weekday_entry_date %in% c("Samstag", "Sonntag")) 
+```
 
 ### Prüfung der verwendeten Konten
 
@@ -871,10 +876,24 @@ account_neg_plot_list <- map(benford_by_account_neg, 1) %>%  map2(account_types,
 ```{r, fig.height = 10, fig_width = 7.5}
 library(cowplot) 
 
-test_list <- c(account_pos_plot_list, account_neg_plot_list)[c(1, 5, 2, 6, 3, 7, 4, 8)]
+plot_list_long <- c(account_pos_plot_list, account_neg_plot_list)[c(1, 5, 2, 6, 3, 7, 4, 8)]
 
-do.call(plot_grid, c(test_list, ncol = 2))
+do.call(plot_grid, c(plot_list_long, ncol = 2))
 ```
+
+```{r, fig.height = 4, fig_width = 8}
+library(cowplot) 
+
+do.call(plot_grid, c(account_pos_plot_list, nrow = 2))
+```
+
+```{r, fig.height = 4, fig_width = 8}
+library(cowplot) 
+
+do.call(plot_grid, c(account_neg_plot_list, nrow = 2))
+```
+
+
 
 Größte Abweichungen nach Kontotypen und positiven Beträgen:
 ```{r}
